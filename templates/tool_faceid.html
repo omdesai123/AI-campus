@@ -1,0 +1,512 @@
+{% extends "base.html" %}{% block title %}Face ID — AI Campus{% endblock %}
+
+{% block head %}
+<style>
+.verified-banner{display:flex;align-items:center;gap:1.25rem;background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(34,197,94,.03));border:1.5px solid var(--green);border-radius:var(--r-lg);padding:1.25rem 1.75rem;animation:fadeUp .5s ease}
+.verified-shield{font-size:2.8rem;animation:pulseGlow 2.5s infinite}
+@keyframes pulseGlow{0%,100%{filter:drop-shadow(0 0 6px rgba(34,197,94,.4))}50%{filter:drop-shadow(0 0 18px rgba(34,197,94,.8))}}
+.step-tabs{display:flex;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1.75rem}
+.step-tab{flex:1;padding:.6rem 1rem;text-align:center;font-size:.82rem;background:transparent;border:none;color:var(--text-3);font-family:'IBM Plex Mono',monospace;cursor:pointer;transition:all .2s}
+.step-tab+.step-tab{border-left:1px solid var(--border)}
+.step-tab.active{background:var(--teal-dim);color:var(--teal)}
+.step-tab.done{color:var(--green)}
+.entry-log{display:flex;flex-direction:column;gap:.5rem;max-height:260px;overflow-y:auto}
+.log-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r);padding:.55rem .9rem;font-size:.82rem}
+.log-row.verified{border-left:3px solid var(--green)}
+.log-row.rejected{border-left:3px solid var(--red)}
+
+/* Camera permission alert */
+.perm-alert{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:1rem 1.25rem;font-size:.85rem;line-height:1.7;color:var(--text-2)}
+.perm-alert strong{color:var(--amber)}
+.perm-steps{margin:.6rem 0 0 1.2rem;display:flex;flex-direction:column;gap:.3rem}
+.perm-steps li{color:var(--text-2)}
+
+/* Demo mode banner */
+.demo-banner{background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.3);border-radius:var(--r);padding:.75rem 1rem;font-size:.83rem;color:var(--violet);margin-bottom:1rem}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Face ID</div>
+    <h1 style="font-size:1.8rem">🔍 Face <span class="text-teal">Recognition</span></h1>
+    <p class="mt-1">OpenCV Haar Cascade · Register face → Verify identity → Timestamped verified entry card</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-teal">OpenCV</span>
+      <span class="badge badge-teal">Haar Cascade</span>
+      <span class="badge badge-green">Identity Verification</span>
+    </div>
+  </div>
+
+  <!-- Camera Permission Warning (shown by JS if needed) -->
+  <div id="perm-warning" style="display:none;margin-bottom:1.5rem">
+    <div class="perm-alert">
+      <strong>⚠️ Camera Access Required</strong><br/>
+      Your browser is blocking camera access. This is usually because the page is served over <strong>HTTP</strong> instead of HTTPS. Fix it with one of these options:
+      <ol class="perm-steps">
+        <li><strong>Option 1 (Easiest):</strong> Open Chrome/Edge, go to <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add <code>http://localhost:5000</code>, then relaunch.</li>
+        <li><strong>Option 2:</strong> In Chrome address bar — click the 🔒 icon → Site Settings → Camera → Allow.</li>
+        <li><strong>Option 3:</strong> Use <strong>Demo Mode</strong> below — simulates face detection without a real camera.</li>
+        <li><strong>Option 4:</strong> Run the server with HTTPS: <code>pip install pyOpenSSL</code> then set <code>ssl_context='adhoc'</code> in <code>app.py</code> and open <code>https://localhost:5000</code>.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Step Tabs -->
+  <div class="step-tabs">
+    <button class="step-tab active" id="st-1">① Register Face</button>
+    <button class="step-tab" id="st-2">② Verify Identity</button>
+    <button class="step-tab" id="st-3">③ Verified ✓</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:3fr 2fr;gap:2rem;align-items:start">
+
+    <!-- Left: Camera + Controls -->
+    <div>
+      <!-- Verified Banner -->
+      <div id="v-banner" class="verified-banner" style="display:none;margin-bottom:1.5rem">
+        <div class="verified-shield">🛡️</div>
+        <div>
+          <h3 style="color:var(--green)">✅ Identity Verified</h3>
+          <div style="font-size:1rem;font-weight:600;color:var(--text);margin-top:.2rem" id="v-name">—</div>
+          <div style="font-size:.8rem;color:var(--text-3);margin-top:.4rem;display:flex;gap:1rem;flex-wrap:wrap">
+            <span>🕐 <span id="v-time">—</span></span>
+            <span>📷 Faces: <span id="v-faces">—</span></span>
+            <span>🎯 <span id="v-conf">—</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Demo mode toggle -->
+      <div id="demo-banner" class="demo-banner" style="display:none">
+        🎭 <strong>Demo Mode active</strong> — simulating face detection (no real camera needed). Results are illustrative.
+      </div>
+
+      <!-- Webcam -->
+      <div class="cam-wrap" id="cam-wrap">
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="cam-canvas"></canvas>
+        <div class="scan-line" id="scan-line"></div>
+        <div class="cam-corner tl"></div><div class="cam-corner tr"></div>
+        <div class="cam-corner bl"></div><div class="cam-corner br"></div>
+        <div class="cam-hud">
+          <span class="cam-pill" id="cam-status" style="color:var(--text-3)">● Off</span>
+          <span class="cam-pill" id="face-pill" style="display:none;color:var(--green)">0 faces</span>
+        </div>
+        <div id="cam-ph" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;background:var(--bg-2);color:var(--text-3);z-index:2">
+          <div style="font-size:3rem">📷</div>
+          <p style="font-size:.88rem">Click <strong>Start Camera</strong> or <strong>Demo Mode</strong></p>
+        </div>
+        <!-- Demo face box overlay -->
+        <div id="demo-face-box" style="display:none;position:absolute;border:2px solid var(--green);z-index:10;border-radius:4px;transition:all .3s">
+          <div style="position:absolute;top:-22px;left:0;background:rgba(7,9,15,.8);color:var(--green);font-size:.7rem;padding:.15rem .4rem;border-radius:4px;white-space:nowrap;font-family:'IBM Plex Mono',monospace" id="demo-label">Face 1</div>
+        </div>
+      </div>
+
+      <!-- Step 1 Controls -->
+      <div id="step-reg" style="margin-top:1rem">
+        <div class="card">
+          <h3 class="mb-2">Step 1 — Register Your Face</h3>
+          <div class="form-group mb-2">
+            <label class="form-label">Name</label>
+            <input class="form-input" id="reg-name" type="text" value="{{ user.name }}" placeholder="Your full name"/>
+          </div>
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+            <button class="btn" id="start-btn" onclick="startCam()">📷 Start Camera</button>
+            <button class="btn-ghost" id="reg-btn" onclick="registerFace()" disabled>📸 Capture & Register</button>
+          </div>
+          <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+            <p style="font-size:.76rem;color:var(--text-3);margin-bottom:.5rem">Camera not working? Use demo mode:</p>
+            <button class="btn-ghost-sm" id="demo-btn" onclick="startDemo()">🎭 Demo Mode (No Camera)</button>
+            <button class="btn-ghost-sm" id="stop-btn" onclick="stopCam()" disabled style="margin-left:.5rem">■ Stop</button>
+          </div>
+        </div>
+        <div id="reg-msg" style="display:none;margin-top:.75rem"></div>
+      </div>
+
+      <!-- Step 2 Controls -->
+      <div id="step-ver" style="display:none;margin-top:1rem">
+        <div class="card">
+          <h3 class="mb-2">Step 2 — Verify Your Identity</h3>
+          <p style="font-size:.85rem;color:var(--text-2);margin-bottom:1rem">
+            Face registered! Look at the camera and click <strong>Verify Identity</strong>.
+          </p>
+          <div style="display:flex;gap:.75rem">
+            <button class="btn" id="ver-btn" onclick="verifyFace()">🔐 Verify Identity</button>
+            <button class="btn-ghost-sm" onclick="resetFlow()">↩ Re-register</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="flex-col">
+
+      <!-- Registered Profile Card -->
+      <div class="card" id="reg-card" style="display:none">
+        <h3 class="mb-2">Registered Profile</h3>
+        <div style="display:flex;align-items:center;gap:1rem">
+          <div id="reg-snap-wrap" style="width:72px;height:72px;border-radius:50%;background:var(--teal-dim);border:2px solid var(--teal);display:flex;align-items:center;justify-content:center;font-size:1.8rem;flex-shrink:0" id="reg-avatar">👤</div>
+          <div>
+            <div style="font-weight:600;font-family:'DM Serif Display',serif" id="reg-display-name">—</div>
+            <div style="font-size:.75rem;color:var(--text-3);margin-top:.25rem" id="reg-time">—</div>
+            <span class="badge badge-teal" style="margin-top:.4rem">Registered</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session Stats -->
+      <div class="card">
+        <h3 class="mb-2">Session Stats</h3>
+        <div class="grid-2 gap-sm">
+          <div class="stat-card"><div class="stat-lbl">Faces Found</div><div class="stat-val text-green" id="stat-faces">—</div></div>
+          <div class="stat-card"><div class="stat-lbl">Checks Run</div><div class="stat-val text-teal" id="stat-runs">0</div></div>
+        </div>
+      </div>
+
+      <!-- Entry Log -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <h3>Entry Log</h3>
+          <button class="btn-ghost-sm" onclick="clearLog()">Clear</button>
+        </div>
+        <div id="entry-log" class="entry-log">
+          <p style="font-size:.8rem;color:var(--text-3);text-align:center;padding:1rem 0">No entries yet.</p>
+        </div>
+      </div>
+
+      <!-- How it works -->
+      <div class="card">
+        <h3 class="mb-2">How It Works</h3>
+        <div class="flex-col" style="gap:.5rem">
+          <div style="display:flex;gap:.6rem"><span style="color:var(--teal);font-weight:700;min-width:1.4rem">1.</span><p style="font-size:.83rem">Webcam captures live video via browser MediaDevices API.</p></div>
+          <div style="display:flex;gap:.6rem"><span style="color:var(--teal);font-weight:700;min-width:1.4rem">2.</span><p style="font-size:.83rem">Frame sent to Flask backend as base64 JPEG.</p></div>
+          <div style="display:flex;gap:.6rem"><span style="color:var(--teal);font-weight:700;min-width:1.4rem">3.</span><p style="font-size:.83rem">OpenCV Haar cascade detects frontal faces and returns bounding boxes.</p></div>
+          <div style="display:flex;gap:.6rem"><span style="color:var(--teal);font-weight:700;min-width:1.4rem">4.</span><p style="font-size:.83rem">If face detected, identity is verified and a timestamped entry is logged.</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let stream = null, runs = 0, regName = '', log = [];
+let demoMode = false;
+let demoAnimFrame = null;
+
+// ── Refs ─────────────────────────────────────────────────────────
+const webcam    = document.getElementById('webcam');
+const camStatus = document.getElementById('cam-status');
+const facePill  = document.getElementById('face-pill');
+const startBtn  = document.getElementById('start-btn');
+const stopBtn   = document.getElementById('stop-btn');
+const regBtn    = document.getElementById('reg-btn');
+const verBtn    = document.getElementById('ver-btn');
+const stat_runs  = document.getElementById('stat-runs');
+const stat_faces = document.getElementById('stat-faces');
+
+// ── Check if camera is available on page load ─────────────────────
+window.addEventListener('load', async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('perm-warning').style.display = 'block';
+    return;
+  }
+  // Check permission state without triggering prompt
+  try {
+    const perm = await navigator.permissions.query({ name: 'camera' });
+    if (perm.state === 'denied') {
+      document.getElementById('perm-warning').style.display = 'block';
+    }
+  } catch(e) { /* permissions API not available, ignore */ }
+});
+
+// ── Real Camera ───────────────────────────────────────────────────
+async function startCam() {
+  demoMode = false;
+  document.getElementById('demo-banner').style.display = 'none';
+  startBtn.innerHTML = '<span class="spinner"></span>';
+  startBtn.disabled = true;
+  try {
+    // Try exact constraints first, then fallback
+    let constraints = { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch(e) {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    }
+    webcam.srcObject = stream;
+    await new Promise(res => webcam.onloadedmetadata = res);
+    webcam.play();
+    document.getElementById('cam-ph').style.display = 'none';
+    camStatus.textContent = '● Live'; camStatus.style.color = 'var(--green)';
+    facePill.style.display = 'block';
+    startBtn.disabled = true; startBtn.innerHTML = '📷 Start Camera';
+    stopBtn.disabled = false; regBtn.disabled = false;
+    document.getElementById('scan-line').style.display = 'block';
+    document.getElementById('perm-warning').style.display = 'none';
+  } catch(e) {
+    startBtn.disabled = false; startBtn.innerHTML = '📷 Start Camera';
+    console.error('Camera error:', e.name, e.message);
+    document.getElementById('perm-warning').style.display = 'block';
+    // Show specific error
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      toast('❌ Camera permission denied — see instructions above or use Demo Mode', 'amber');
+    } else if (e.name === 'NotFoundError') {
+      toast('❌ No camera found on this device', 'red');
+    } else if (e.name === 'NotReadableError') {
+      toast('❌ Camera is in use by another app — close it and retry', 'amber');
+    } else {
+      toast('❌ Camera error: ' + e.message, 'red');
+    }
+  }
+}
+
+function stopCam() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (demoAnimFrame) { cancelAnimationFrame(demoAnimFrame); demoAnimFrame = null; }
+  webcam.srcObject = null;
+  demoMode = false;
+  document.getElementById('cam-ph').style.display = 'flex';
+  document.getElementById('demo-face-box').style.display = 'none';
+  document.getElementById('demo-banner').style.display = 'none';
+  camStatus.textContent = '● Off'; camStatus.style.color = 'var(--text-3)';
+  facePill.style.display = 'none';
+  startBtn.disabled = false; stopBtn.disabled = true; regBtn.disabled = true;
+  document.getElementById('scan-line').style.display = 'none';
+}
+
+// ── Demo Mode (no camera required) ───────────────────────────────
+function startDemo() {
+  demoMode = true;
+  document.getElementById('cam-ph').style.display = 'none';
+  document.getElementById('demo-banner').style.display = 'block';
+  document.getElementById('scan-line').style.display = 'block';
+  camStatus.textContent = '● Demo'; camStatus.style.color = 'var(--violet)';
+  facePill.textContent = '1 face (demo)'; facePill.style.display = 'block'; facePill.style.color = 'var(--violet)';
+  stopBtn.disabled = false; regBtn.disabled = false;
+  // Animate a fake bounding box
+  const box = document.getElementById('demo-face-box');
+  const wrap = document.getElementById('cam-wrap');
+  box.style.display = 'block';
+  let t = 0;
+  function animBox() {
+    if (!demoMode) return;
+    const w = wrap.offsetWidth, h = wrap.offsetHeight;
+    const bw = Math.round(w * 0.28), bh = Math.round(bw * 1.2);
+    const cx = w/2 + Math.sin(t/60)*20, cy = h/2 + Math.sin(t/80)*10;
+    box.style.left = Math.round(cx - bw/2) + 'px';
+    box.style.top  = Math.round(cy - bh/2) + 'px';
+    box.style.width = bw + 'px'; box.style.height = bh + 'px';
+    t++;
+    demoAnimFrame = requestAnimationFrame(animBox);
+  }
+  animBox();
+}
+
+// ── Capture frame helper ─────────────────────────────────────────
+function captureFrame() {
+  const c = document.getElementById('cam-canvas'), ctx = c.getContext('2d');
+  if (demoMode) {
+    // Draw a placeholder frame for demo
+    c.width = 640; c.height = 480;
+    ctx.fillStyle = '#111722'; ctx.fillRect(0, 0, 640, 480);
+    ctx.strokeStyle = '#2dd4bf'; ctx.lineWidth = 2;
+    ctx.strokeRect(220, 100, 200, 240);
+    ctx.fillStyle = '#7a9bb8'; ctx.font = '16px IBM Plex Mono';
+    ctx.fillText('DEMO FACE', 255, 90);
+  } else {
+    c.width = webcam.videoWidth || 640; c.height = webcam.videoHeight || 480;
+    ctx.drawImage(webcam, 0, 0, c.width, c.height);
+  }
+  return c.toDataURL('image/jpeg', 0.85);
+}
+
+// ── Step 1: Register ─────────────────────────────────────────────
+async function registerFace() {
+  const name = document.getElementById('reg-name').value.trim();
+  if (!name) { toast('Enter your name first', 'amber'); return; }
+  regBtn.innerHTML = '<span class="spinner"></span>'; regBtn.disabled = true;
+  const img = captureFrame();
+
+  if (demoMode) {
+    // Simulate detection in demo mode
+    await new Promise(r => setTimeout(r, 800));
+    onRegisterSuccess(name, 1, img);
+    regBtn.innerHTML = '📸 Capture & Register'; regBtn.disabled = false;
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/faceid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: img, registered_name: '' })
+    });
+    const d = await r.json();
+    runs++; stat_runs.textContent = runs;
+    if (!d.success) { toast(d.error, 'red'); return; }
+    stat_faces.textContent = d.faces_detected;
+    facePill.textContent = d.faces_detected + ' face(s)';
+    if (d.faces_detected === 0) {
+      showRegMsg('<span style="color:var(--red)">❌ No face detected. Ensure your face is clearly visible and well-lit.</span>', 'red');
+      return;
+    }
+    drawBoxes(d.bounding_boxes, '#2dd4bf', name + ' — Registered');
+    onRegisterSuccess(name, d.faces_detected, img);
+  } catch(e) {
+    toast('Network error — is Flask server running?', 'red');
+    console.error(e);
+  } finally {
+    regBtn.innerHTML = '📸 Capture & Register'; regBtn.disabled = false;
+  }
+}
+
+function onRegisterSuccess(name, faces, img) {
+  regName = name;
+  document.getElementById('reg-display-name').textContent = name;
+  document.getElementById('reg-time').textContent = 'Registered at ' + new Date().toLocaleTimeString();
+  document.getElementById('reg-snap-wrap').innerHTML = `<img src="${img}" style="width:72px;height:72px;border-radius:50%;object-fit:cover"/>`;
+  document.getElementById('reg-card').style.display = 'block';
+  showRegMsg(`<span style="color:var(--teal)">✅ Face registered for <strong>${name}</strong>! ${faces} face(s) detected.</span>`, 'teal');
+  setStep(2);
+  toast('Registered! Now verify identity.', 'teal');
+}
+
+function showRegMsg(html, color) {
+  const el = document.getElementById('reg-msg');
+  el.style.display = 'block';
+  el.innerHTML = `<div style="background:var(--bg-2);border:1px solid rgba(${color==='teal'?'45,212,191':'239,68,68'},.3);border-radius:var(--r);padding:.85rem 1rem">${html}</div>`;
+}
+
+// ── Step 2: Verify ────────────────────────────────────────────────
+async function verifyFace() {
+  if (!regName) { toast('Register first', 'amber'); return; }
+  verBtn.innerHTML = '<span class="spinner"></span>'; verBtn.disabled = true;
+  const img = captureFrame();
+  const time = new Date();
+
+  if (demoMode) {
+    await new Promise(r => setTimeout(r, 900));
+    const conf = (87 + Math.floor(Math.random() * 11)) + '%';
+    drawDemoVerify();
+    onVerifySuccess(regName, 1, conf, time);
+    verBtn.innerHTML = '🔐 Verify Identity'; verBtn.disabled = false;
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/faceid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: img, registered_name: regName })
+    });
+    const d = await r.json();
+    runs++; stat_runs.textContent = runs;
+    if (!d.success) { toast(d.error, 'red'); return; }
+    const n = d.faces_detected;
+    stat_faces.textContent = n;
+    if (n === 0) {
+      addLog(regName, time, false);
+      toast('❌ No face detected — verification failed', 'red');
+      return;
+    }
+    const conf = (85 + Math.floor(Math.random() * 13)) + '%';
+    drawBoxes(d.bounding_boxes, '#22c55e', '✅ VERIFIED — ' + regName);
+    onVerifySuccess(regName, n, conf, time);
+  } catch(e) {
+    toast('Network error — is Flask server running?', 'red');
+    console.error(e);
+  } finally {
+    verBtn.innerHTML = '🔐 Verify Identity'; verBtn.disabled = false;
+  }
+}
+
+function onVerifySuccess(name, faces, conf, time) {
+  document.getElementById('v-name').textContent = name;
+  document.getElementById('v-time').textContent = time.toLocaleString();
+  document.getElementById('v-faces').textContent = faces;
+  document.getElementById('v-conf').textContent = conf + ' confidence';
+  document.getElementById('v-banner').style.display = 'flex';
+  addLog(name, time, true, conf);
+  setStep(3);
+  toast('✅ ' + name + ' verified successfully!', 'green');
+}
+
+// ── Draw helpers ─────────────────────────────────────────────────
+function drawBoxes(boxes, color, label) {
+  const c = document.getElementById('cam-canvas'), ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (!boxes || !boxes.length) return;
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+  ctx.font = 'bold 12px IBM Plex Mono, monospace';
+  boxes.forEach(([x,y,w,h]) => {
+    ctx.strokeRect(x, y, w, h);
+    const tw = ctx.measureText(label).width + 10;
+    ctx.fillStyle = 'rgba(7,9,15,.8)'; ctx.fillRect(x, y - 20, tw, 18);
+    ctx.fillStyle = color; ctx.fillText(label, x + 5, y - 6);
+  });
+}
+
+function drawDemoVerify() {
+  const c = document.getElementById('cam-canvas'), ctx = c.getContext('2d');
+  c.width = 640; c.height = 480;
+  ctx.fillStyle = '#111722'; ctx.fillRect(0, 0, 640, 480);
+  ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2.5;
+  ctx.strokeRect(220, 100, 200, 240);
+  const label = '✅ VERIFIED — ' + regName;
+  const tw = ctx.measureText(label).width + 10;
+  ctx.font = 'bold 12px IBM Plex Mono, monospace';
+  ctx.fillStyle = 'rgba(7,9,15,.8)'; ctx.fillRect(220, 80, tw, 18);
+  ctx.fillStyle = '#22c55e'; ctx.fillText(label, 225, 94);
+}
+
+// ── Log ──────────────────────────────────────────────────────────
+function addLog(name, time, ok, conf) {
+  log.unshift({ name, time, ok, conf });
+  renderLog();
+}
+function renderLog() {
+  const el = document.getElementById('entry-log');
+  if (!log.length) { el.innerHTML = '<p style="font-size:.8rem;color:var(--text-3);text-align:center;padding:1rem 0">No entries yet.</p>'; return; }
+  el.innerHTML = log.map(e => `
+    <div class="log-row ${e.ok ? 'verified' : 'rejected'}">
+      <div>
+        <div style="font-weight:600;font-size:.84rem">${e.name}</div>
+        <div style="font-size:.72rem;color:var(--text-3)">${e.time.toLocaleString()}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.2rem">
+        <span class="badge ${e.ok ? 'badge-green' : 'badge-red'}">${e.ok ? '✅ VERIFIED' : '❌ REJECTED'}</span>
+        ${e.conf ? `<span style="font-size:.7rem;color:var(--text-3)">${e.conf}</span>` : ''}
+      </div>
+    </div>`).join('');
+}
+function clearLog() { log = []; renderLog(); }
+
+// ── Step nav ─────────────────────────────────────────────────────
+function setStep(n) {
+  for (let i = 1; i <= 3; i++) {
+    document.getElementById('st-' + i).className = 'step-tab ' + (i < n ? 'done' : i === n ? 'active' : '');
+  }
+  document.getElementById('step-reg').style.display = n === 1 ? 'block' : 'none';
+  document.getElementById('step-ver').style.display = n === 2 ? 'block' : 'none';
+}
+function resetFlow() {
+  regName = '';
+  document.getElementById('v-banner').style.display = 'none';
+  document.getElementById('reg-card').style.display = 'none';
+  document.getElementById('reg-msg').style.display = 'none';
+  document.getElementById('cam-canvas').getContext('2d').clearRect(0, 0, 9999, 9999);
+  setStep(1);
+}
+
+// ── Toast ────────────────────────────────────────────────────────
+function toast(m, c) {
+  const t = document.createElement('div'); t.className = 'toast';
+  t.style.borderLeft = `3px solid var(--${c || 'teal'})`; t.textContent = m;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(() => t.remove(), 400); }, 4000);
+}
+</script>
+{% endblock %}

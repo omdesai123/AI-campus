@@ -1,0 +1,111 @@
+{% extends "base.html" %}{% block title %}Performance Predictor — AI Campus{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Performance Predictor</div>
+    <h1 style="font-size:1.8rem">📊 Performance <span class="text-teal">Predictor</span></h1>
+    <p class="mt-1">Random Forest Classifier · 4 features · Binary (Pass/Fail) · <code>performance.pkl</code></p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-teal">Random Forest</span>
+      <span class="badge badge-teal">100 Estimators</span>
+      <span class="badge badge-green">performance.pkl</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Student Metrics</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val,step,hint in [
+          ('att','Attendance (%)',0,100,75,1,'0 = never, 100 = perfect'),
+          ('hrs','Daily Study Hours',0,12,3,0.5,'Average hours per day'),
+          ('asgn','Assignment Score (%)',0,100,70,1,'Average across all assignments'),
+          ('mrk','Exam Marks (%)',0,100,65,1,'Percentage in exams'),
+        ] %}
+        <div>
+          <div class="range-header mb-1">
+            <label class="form-label">{{ label }}</label>
+            <span class="range-val" id="v-{{ id }}">{{ val }}</span>
+          </div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{{ step }}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+          <p style="font-size:.75rem;color:var(--text-3);margin-top:.25rem">{{ hint }}</p>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="pred-btn" onclick="predict()">Predict Performance →</button>
+      </div>
+    </div>
+    <div>
+      <div id="placeholder" class="card text-center" style="padding:3rem 1.5rem">
+        <div style="font-size:3rem;margin-bottom:.75rem">📊</div>
+        <h3>Awaiting Input</h3>
+        <p class="mt-1">Adjust sliders and click Predict.</p>
+      </div>
+      <div id="result" style="display:none">
+        <div class="result-panel mb-2" id="result-panel">
+          <div class="verdict-ring" id="verdict-ring">
+            <span class="ring-main" id="verdict-lbl">—</span>
+            <span class="ring-sub">Prediction</span>
+          </div>
+          <div class="text-center mb-2">
+            <span class="badge badge-teal" id="conf-badge"></span>
+          </div>
+          <div class="flex-col gap-sm">
+            <div>
+              <div class="range-header mb-1"><span style="font-size:.78rem;color:var(--text-3)">Pass %</span><span id="pp" class="range-val text-green"></span></div>
+              <div class="prog"><div class="prog-fill prog-green" id="pass-bar" style="width:0%"></div></div>
+            </div>
+            <div>
+              <div class="range-header mb-1"><span style="font-size:.78rem;color:var(--text-3)">Fail %</span><span id="fp" class="range-val text-red"></span></div>
+              <div class="prog"><div class="prog-fill prog-red" id="fail-bar" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card mb-2"><h3 class="mb-2">Feature Importance</h3><canvas id="imp-chart" height="170"></canvas></div>
+        <div class="card"><h3 class="mb-2">Personalised Tips</h3><div class="flex-col gap-sm" id="tips"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let impChart=null;
+async function predict(){
+  const btn=document.getElementById('pred-btn');
+  btn.innerHTML='<span class="spinner"></span> Predicting…';btn.disabled=true;
+  try{
+    const r=await fetch('/api/performance',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+att.value,study_hours:+hrs.value,assignments:+asgn.value,marks:+mrk.value})});
+    const d=await r.json();
+    if(!d.success){toast(d.error,'red');return}
+    document.getElementById('placeholder').style.display='none';
+    document.getElementById('result').style.display='block';
+    const ring=document.getElementById('verdict-ring');
+    ring.className='verdict-ring '+(d.prediction?'pass':'fail');
+    document.getElementById('verdict-lbl').textContent=d.label;
+    document.getElementById('verdict-lbl').style.color=d.prediction?'var(--green)':'var(--red)';
+    document.getElementById('conf-badge').textContent=d.confidence+'% Confidence';
+    document.getElementById('pp').textContent=d.probabilities.pass+'%';
+    document.getElementById('fp').textContent=d.probabilities.fail+'%';
+    document.getElementById('pass-bar').style.width=d.probabilities.pass+'%';
+    document.getElementById('fail-bar').style.width=d.probabilities.fail+'%';
+    document.getElementById('result-panel').className='result-panel '+(d.prediction?'success':'danger');
+    const fi=d.feature_importance;
+    if(impChart)impChart.destroy();
+    impChart=new Chart(document.getElementById('imp-chart'),{type:'bar',
+      data:{labels:Object.keys(fi),datasets:[{data:Object.values(fi),
+        backgroundColor:'rgba(45,212,191,.65)',borderColor:'rgba(45,212,191,.9)',
+        borderWidth:1,borderRadius:6}]},
+      options:{indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{grid:{color:'#1c2840'},ticks:{color:'#7a9bb8',callback:v=>v+'%'}},
+                y:{grid:{display:false},ticks:{color:'#e2eaf5'}}}}});
+    document.getElementById('tips').innerHTML=d.tips.map(t=>`<div class="tip-item">${t}</div>`).join('');
+  }catch(e){toast('Network error — is server running?','red')}
+  finally{btn.innerHTML='Predict Performance →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';
+  t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

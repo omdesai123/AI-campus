@@ -1,0 +1,115 @@
+{% extends "base.html" %}{% block title %}Attendance Analysis — AI Campus{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Attendance Analysis</div>
+    <h1 style="font-size:1.8rem">📅 Attendance <span class="text-teal">Pattern Analysis</span></h1>
+    <p class="mt-1">Linear Trend Detection · Time Series · 3-Week Forecast</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-amber">Time Series</span><span class="badge badge-teal">Trend Analysis</span><span class="badge badge-teal">Forecasting</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Weekly Attendance History (%)</h3>
+      <p style="font-size:.83rem;margin-bottom:1rem">Enter attendance for each week (0–100). Add or remove weeks as needed.</p>
+      <div class="flex-col gap-sm" id="att-inputs">
+        {% for i,v in [(1,85),(2,80),(3,78),(4,72),(5,68),(6,62)] %}
+        <div class="flex gap-sm">
+          <span style="min-width:4rem;font-size:.8rem;color:var(--text-3);font-family:'IBM Plex Mono',monospace;padding-top:.7rem">Week {{ i }}</span>
+          <input class="form-input att-val" type="number" min="0" max="100" value="{{ v }}" style="width:100%"/>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:.75rem;margin-top:1rem">
+        <button class="btn-ghost-sm" onclick="addWeek()">+ Add Week</button>
+        <button class="btn-ghost-sm" onclick="removeWeek()">− Remove</button>
+      </div>
+      <button class="btn btn-full mt-3" id="att-btn" onclick="analyseAttendance()">Analyse Pattern →</button>
+    </div>
+    <div>
+      <div id="att-placeholder" class="card text-center" style="padding:3rem 1.5rem">
+        <div style="font-size:3rem;margin-bottom:.75rem">📅</div><h3>Analysis will appear here</h3>
+        <p class="mt-1">Enter weekly attendance and click Analyse.</p>
+      </div>
+      <div id="att-result" style="display:none" class="flex-col">
+        <div class="result-panel" id="att-panel">
+          <canvas id="att-chart" height="200"></canvas>
+        </div>
+        <div class="grid-2 gap-sm">
+          <div class="stat-card"><div class="stat-lbl">Average</div><div class="stat-val text-teal" id="att-avg">—</div></div>
+          <div class="stat-card"><div class="stat-lbl">Trend</div><div class="stat-val" id="att-trend" style="font-size:1.2rem;margin-top:.2rem">—</div></div>
+        </div>
+        <div class="card" id="att-warn-card" style="display:none;border-color:rgba(239,68,68,.3)">
+          <div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ Warning</div>
+          <p id="att-warn-msg" style="font-size:.85rem;color:var(--text-2)"></p>
+        </div>
+        <div class="card">
+          <h3 class="mb-2">Forecast — Next 3 Weeks</h3>
+          <div class="flex-col gap-sm" id="att-forecast"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let attChart=null;
+let weekCount=6;
+function addWeek(){
+  weekCount++;
+  const d=document.getElementById('att-inputs');
+  const row=document.createElement('div');row.className='flex gap-sm';
+  row.innerHTML=`<span style="min-width:4rem;font-size:.8rem;color:var(--text-3);font-family:'IBM Plex Mono',monospace;padding-top:.7rem">Week ${weekCount}</span>
+    <input class="form-input att-val" type="number" min="0" max="100" value="70" style="width:100%"/>`;
+  d.appendChild(row);
+}
+function removeWeek(){
+  const rows=document.querySelectorAll('#att-inputs .flex');
+  if(rows.length>3){rows[rows.length-1].remove();weekCount--}
+}
+async function analyseAttendance(){
+  const vals=[...document.querySelectorAll('.att-val')].map(i=>parseFloat(i.value)||0);
+  if(vals.length<3){toast('Need at least 3 weeks','amber');return}
+  const btn=document.getElementById('att-btn');
+  btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/attendance',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({history:vals})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('att-placeholder').style.display='none';
+    document.getElementById('att-result').style.display='flex';
+    document.getElementById('att-avg').textContent=d.average+'%';
+    document.getElementById('att-trend').textContent=d.trend_label;
+    document.getElementById('att-trend').style.color=d.trend_slope<-1?'var(--red)':d.trend_slope>0.5?'var(--green)':'var(--amber)';
+    const warnCard=document.getElementById('att-warn-card');
+    if(d.warning){warnCard.style.display='block';document.getElementById('att-warn-msg').textContent=d.message}
+    else warnCard.style.display='none';
+    document.getElementById('att-panel').className='result-panel '+(d.warning?'danger':'success');
+    const labels=vals.map((_,i)=>'Wk '+(i+1));
+    const foreLabels=d.prediction_next_3_weeks.map((_,i)=>'Wk '+(vals.length+i+1));
+    if(attChart)attChart.destroy();
+    attChart=new Chart(document.getElementById('att-chart'),{type:'line',
+      data:{labels:[...labels,...foreLabels],datasets:[
+        {label:'Actual',data:[...vals,...Array(3).fill(null)],borderColor:'var(--teal)',
+         backgroundColor:'rgba(45,212,191,.08)',tension:.4,pointBackgroundColor:'var(--teal)',pointRadius:5},
+        {label:'Forecast',data:[...Array(vals.length).fill(null),...d.prediction_next_3_weeks],
+         borderColor:'var(--amber)',borderDash:[5,5],backgroundColor:'rgba(245,158,11,.05)',
+         tension:.4,pointBackgroundColor:'var(--amber)',pointRadius:5}
+      ]},
+      options:{plugins:{legend:{labels:{color:'#7a9bb8'}}},
+        scales:{x:{grid:{color:'#1c2840'},ticks:{color:'#7a9bb8'}},
+                y:{grid:{color:'#1c2840'},ticks:{color:'#7a9bb8',callback:v=>v+'%'},min:0,max:100}}}});
+    document.getElementById('att-forecast').innerHTML=d.prediction_next_3_weeks.map((v,i)=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem .75rem;background:var(--bg-2);border-radius:var(--r);font-size:.84rem">
+        <span style="color:var(--text-2)">Week ${vals.length+i+1} Forecast</span>
+        <span class="badge ${v>=75?'badge-green':v>=60?'badge-amber':'badge-red'}">${v}%</span>
+      </div>`).join('');
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Analyse Pattern →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

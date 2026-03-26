@@ -1,0 +1,89 @@
+{% extends "base.html" %}{% block title %}Student Clustering — AI Campus{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Student Clustering</div>
+    <h1 style="font-size:1.8rem">🗂️ Student <span class="text-teal">Clustering</span></h1>
+    <p class="mt-1">K-Means (k=3) · Unsupervised · High Performer / Average / At-Risk groups</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-violet">K-Means</span>
+      <span class="badge badge-violet">k=3 Clusters</span>
+      <span class="badge badge-teal">Unsupervised ML</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Student Profile</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val,step in [('catt','Attendance (%)',0,100,75,1),('cmrk','Marks (%)',0,100,65,1),('casgn','Assignment Score (%)',0,100,70,1),('chrs','Study Hours/day',0,10,3,0.5)] %}
+        <div>
+          <div class="range-header mb-1"><label class="form-label">{{ label }}</label><span class="range-val" id="v-{{ id }}">{{ val }}</span></div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{{ step }}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="cl-btn" onclick="clusterStudent()">Classify Student →</button>
+      </div>
+    </div>
+    <div>
+      <div id="cl-ph" class="card text-center" style="padding:3rem 1.5rem"><div style="font-size:3rem;margin-bottom:.75rem">🗂️</div><h3>Cluster result will appear here</h3></div>
+      <div id="cl-result" style="display:none" class="flex-col">
+        <div class="result-panel" id="cl-panel">
+          <div class="verdict-ring" id="cl-ring">
+            <span style="font-size:2rem" id="cl-icon">—</span>
+            <span class="ring-sub">Cluster</span>
+          </div>
+          <div class="text-center mb-2">
+            <div style="font-family:'DM Serif Display',serif;font-size:1.3rem;margin-bottom:.5rem" id="cl-name">—</div>
+            <span class="badge badge-teal" id="cl-score"></span>
+          </div>
+          <!-- Peer comparison bars -->
+          <div class="flex-col gap-sm" id="cl-compare"></div>
+        </div>
+        <div class="card">
+          <h3 class="mb-2">Next Steps</h3>
+          <div class="flex-col gap-sm" id="cl-tips"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function clusterStudent(){
+  const btn=document.getElementById('cl-btn');btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/cluster',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+catt.value,marks:+cmrk.value,assignments:+casgn.value,study_hours:+chrs.value})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('cl-ph').style.display='none';document.getElementById('cl-result').style.display='flex';
+    const colorMap={green:'var(--green)',gold:'var(--amber)',red:'var(--red)'};
+    const ringClass={green:'low',gold:'medium',red:'high'};
+    document.getElementById('cl-ring').className='verdict-ring '+ringClass[d.color];
+    document.getElementById('cl-icon').textContent=d.icon;
+    document.getElementById('cl-name').textContent=d.cluster_name;
+    document.getElementById('cl-name').style.color=colorMap[d.color];
+    document.getElementById('cl-score').textContent='Profile Score: '+d.profile_score;
+    document.getElementById('cl-panel').className='result-panel '+(d.color==='green'?'success':d.color==='gold'?'warning':'danger');
+    const pc=d.peer_comparison;
+    document.getElementById('cl-compare').innerHTML=`
+      <div>
+        <div class="range-header mb-1"><span style="font-size:.78rem;color:var(--text-3)">Your Score</span><span class="range-val">${pc.your_score}</span></div>
+        <div class="prog"><div class="prog-fill prog-teal" style="width:${pc.your_score}%"></div></div>
+      </div>
+      <div>
+        <div class="range-header mb-1"><span style="font-size:.78rem;color:var(--text-3)">Your Cluster Avg</span><span class="range-val">${pc.cluster_avg}</span></div>
+        <div class="prog"><div class="prog-fill prog-amber" style="width:${pc.cluster_avg}%"></div></div>
+      </div>
+      <div>
+        <div class="range-header mb-1"><span style="font-size:.78rem;color:var(--text-3)">Top Cluster Avg</span><span class="range-val">${pc.top_cluster_avg}</span></div>
+        <div class="prog"><div class="prog-fill prog-green" style="width:${pc.top_cluster_avg}%"></div></div>
+      </div>`;
+    document.getElementById('cl-tips').innerHTML=d.tips.map(t=>`<div class="tip-item">${t}</div>`).join('');
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Classify Student →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

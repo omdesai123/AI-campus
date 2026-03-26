@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% block title %}Dashboard — AI Campus{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div style="margin-bottom:2rem">
+    <p class="text-dim" style="font-size:.75rem;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.4rem">Dashboard</p>
+    <h1 style="font-size:2rem">Good day, <span class="text-teal">{{ user.name.split()[0] }}</span> 👋</h1>
+    <p class="mt-1">Select an AI tool below — all models are loaded and ready.</p>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="grid-4 mb-2">
+    <div class="stat-card"><div class="stat-lbl">AI Tools</div><div class="stat-val text-teal">10</div><div class="stat-sub">All active</div></div>
+    <div class="stat-card"><div class="stat-lbl">ML Models</div><div class="stat-val" style="font-size:1.3rem;margin-top:.2rem">RF · GB<br>KMeans · IF</div><div class="stat-sub">Trained</div></div>
+    <div class="stat-card"><div class="stat-lbl">Features</div><div class="stat-val text-amber">4–5</div><div class="stat-sub">Per model</div></div>
+    <div class="stat-card"><div class="stat-lbl">Account</div><div class="stat-val text-green" style="font-size:1.3rem;margin-top:.2rem">Active</div><div class="stat-sub">{{ user.email }}</div></div>
+  </div>
+
+  <!-- Tools -->
+  <h2 style="margin-bottom:1.25rem">AI <span class="text-teal">Tools</span></h2>
+  <div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+
+    {% set tools_data = [
+      ('performance','📊','Performance Predictor','Random Forest · 4 features · Binary class','badge-teal','green','Live'),
+      ('risk','⚡','Risk Classification','Random Forest · Att+Marks+Behavior · 3 levels','badge-red','red','Live'),
+      ('attendance','📅','Attendance Analyser','Trend + Linear Regression · Forecast 3 weeks','badge-amber','amber','Live'),
+      ('faceid','🔍','Face Recognition','OpenCV Haar Cascade · Register + Verify','badge-teal','teal','Live'),
+      ('anomaly','🔬','Anomaly Detection','Isolation Forest · Unsupervised outlier','badge-violet','violet','Live'),
+      ('recommend','💡','Recommendation Engine','Rule-based + ML scoring · Personalised','badge-amber','amber','Live'),
+      ('stress','🧠','Stress Predictor','Gradient Boosting · Sleep+Screen+Activity','badge-red','red','Live'),
+      ('chatbot','💬','AI Chatbot','NLP Rule-based KB · Student queries','badge-teal','teal','Live'),
+      ('cluster','🗂️','Student Clustering','K-Means (k=3) · Performance grouping','badge-violet','violet','Live'),
+      ('dropout','🚨','Dropout Predictor','Random Forest · 5 features · Intervention','badge-red','red','Live'),
+    ] %}
+
+    {% for slug,icon,name,desc,badge,color,status in tools_data %}
+    <a href="{{ url_for('tool',tool=slug) }}" class="tool-card animate-in">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="tool-icon-wrap">{{ icon }}</div>
+        <span class="badge badge-green">{{ status }}</span>
+      </div>
+      <h3>{{ name }}</h3>
+      <p style="font-size:.82rem">{{ desc }}</p>
+      <div class="divider" style="margin:.5rem 0"></div>
+      <span class="badge {{ badge }}" style="font-size:.7rem">ML Powered</span>
+      <div class="tool-arrow mt-1">Open Tool →</div>
+    </a>
+    {% endfor %}
+
+  </div>
+</div>
+{% endblock %}

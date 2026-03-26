@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% block title %}AI Chatbot — AI Campus{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / AI Chatbot</div>
+    <h1 style="font-size:1.8rem">💬 AI <span class="text-teal">Chatbot</span></h1>
+    <p class="mt-1">NLP Rule-based Knowledge Base · Student queries · Study, attendance, stress, health</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-teal">NLP Rule-Based</span>
+      <span class="badge badge-teal">Pattern Matching</span>
+      <span class="badge badge-amber">Student Support</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:2rem;align-items:start">
+    <div>
+      <div class="chat-window" id="chat-win">
+        <div class="msg msg-bot">👋 <strong>Hi! I'm your AI Campus assistant.</strong><br/>Ask me about attendance, study tips, stress, assignments, health, or dropout prevention.</div>
+      </div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="chat-input" type="text" placeholder="Type your question…" onkeydown="if(event.key==='Enter')sendMsg()"/>
+        <button class="btn" onclick="sendMsg()">Send →</button>
+      </div>
+    </div>
+    <div class="flex-col">
+      <div class="card">
+        <h3 class="mb-2">Quick Questions</h3>
+        <div class="flex-col gap-sm">
+          {% for q in ['How to improve attendance?','I feel stressed about exams','Study tips for better marks','What if I miss assignments?','How much sleep do I need?','I want to quit college'] %}
+          <button class="btn-ghost-sm" style="text-align:left;width:100%;padding:.5rem .75rem" onclick="quickAsk('{{ q }}')">{{ q }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="mb-2">Topics I Know</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+          {% for t in ['Attendance','Study Tips','Stress','Assignments','Health','Dropout','Motivation','Sleep','Exercise','Deadlines'] %}
+          <span class="badge badge-teal">{{ t }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function sendMsg(){
+  const inp=document.getElementById('chat-input');
+  const msg=inp.value.trim();if(!msg)return;
+  inp.value='';addMsg(msg,'user');
+  const typing=addMsg('Thinking…','bot',true);
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+    const d=await r.json();
+    typing.remove();
+    if(d.success){
+      let html=d.answer;
+      if(d.tips&&d.tips.length) html+='<br/><br/><strong>Tips:</strong><ul style="margin-top:.4rem;padding-left:1.2rem">'+d.tips.map(t=>`<li style="margin:.2rem 0">${t}</li>`).join('')+'</ul>';
+      addMsg(html,'bot');
+    } else addMsg('Sorry, something went wrong.','bot');
+  }catch(e){typing.remove();addMsg('Network error — is the server running?','bot')}
+}
+function addMsg(html,who,temp=false){
+  const win=document.getElementById('chat-win');
+  const d=document.createElement('div');
+  d.className='msg msg-'+who;d.innerHTML=html;
+  win.appendChild(d);win.scrollTop=win.scrollHeight;
+  return d;
+}
+function quickAsk(q){document.getElementById('chat-input').value=q;sendMsg()}
+</script>
+{% endblock %}

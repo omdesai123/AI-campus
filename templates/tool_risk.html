@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% block title %}Risk Classification — AI Campus{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Risk Classification</div>
+    <h1 style="font-size:1.8rem">⚡ Student Risk <span class="text-teal">Classification</span></h1>
+    <p class="mt-1">Random Forest · Attendance + Marks + Behavior → High / Medium / Low Risk</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-teal">Random Forest</span><span class="badge badge-red">3-Class</span><span class="badge badge-amber">Trained Model</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Student Profile</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val,step in [('ratt','Attendance (%)',0,100,70,1),('rmrk','Marks (%)',0,100,55,1),('rbeh','Behavior Score (1–10)',1,10,5,0.5)] %}
+        <div>
+          <div class="range-header mb-1"><label class="form-label">{{ label }}</label><span class="range-val" id="v-{{ id }}">{{ val }}</span></div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{{ step }}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="risk-btn" onclick="classifyRisk()">Classify Risk →</button>
+      </div>
+    </div>
+    <div>
+      <div id="r-placeholder" class="card text-center" style="padding:3rem 1.5rem">
+        <div style="font-size:3rem;margin-bottom:.75rem">⚡</div><h3>Risk level will appear here</h3>
+      </div>
+      <div id="r-result" style="display:none" class="flex-col">
+        <div class="result-panel" id="r-panel">
+          <div class="verdict-ring" id="r-ring"><span class="ring-main" id="r-lbl">—</span><span class="ring-sub">Risk Level</span></div>
+          <div class="text-center mb-2"><span class="badge badge-teal" id="r-conf"></span></div>
+          <canvas id="risk-chart" height="160"></canvas>
+        </div>
+        <div class="card"><h3 class="mb-2">Recommended Actions</h3><div class="flex-col gap-sm" id="r-actions"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let riskChart=null;
+async function classifyRisk(){
+  const btn=document.getElementById('risk-btn');
+  btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/risk',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+ratt.value,marks:+rmrk.value,behavior:+rbeh.value})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('r-placeholder').style.display='none';
+    document.getElementById('r-result').style.display='flex';
+    const colorMap={green:'var(--green)',gold:'var(--amber)',red:'var(--red)'};
+    const ringClass={green:'low',gold:'medium',red:'high'};
+    document.getElementById('r-ring').className='verdict-ring '+ringClass[d.color];
+    document.getElementById('r-lbl').textContent=d.label;
+    document.getElementById('r-lbl').style.color=colorMap[d.color];
+    document.getElementById('r-conf').textContent=d.confidence+'% confidence';
+    document.getElementById('r-panel').className='result-panel '+(d.color==='green'?'success':d.color==='gold'?'warning':'danger');
+    const labels=Object.keys(d.probabilities),vals=Object.values(d.probabilities);
+    if(riskChart)riskChart.destroy();
+    riskChart=new Chart(document.getElementById('risk-chart'),{type:'doughnut',
+      data:{labels,datasets:[{data:vals,backgroundColor:['rgba(34,197,94,.7)','rgba(245,158,11,.7)','rgba(239,68,68,.7)'],borderWidth:0}]},
+      options:{plugins:{legend:{labels:{color:'#7a9bb8',font:{size:11}}}}}});
+    document.getElementById('r-actions').innerHTML=d.actions.map((a,i)=>`<div class="action-item ${i===0&&d.risk_level===2?'urgent':''}">${a}</div>`).join('');
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Classify Risk →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

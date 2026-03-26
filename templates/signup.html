@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}Sign Up — AI Campus{% endblock %}
+{% block content %}
+<div class="container-sm" style="padding-top:5rem;padding-bottom:5rem">
+  <div class="text-center mb-2">
+    <div class="nav-logo" style="width:44px;height:44px;font-size:1rem;margin:0 auto .75rem">AI</div>
+    <h2>Create Account</h2>
+    <p class="mt-1">Join AI Campus and access all 10 AI tools.</p>
+  </div>
+  <div class="card card-glow">
+    <form method="POST" class="flex-col">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" type="text" name="name" placeholder="Your Name" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-input" type="email" name="email" placeholder="you@university.edu" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" type="password" name="password" placeholder="Min. 6 characters" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Password</label>
+        <input class="form-input" type="password" name="confirm" placeholder="Repeat password" required/>
+      </div>
+      <button class="btn btn-full mt-2" type="submit">Create Account →</button>
+    </form>
+  </div>
+  <p class="text-center mt-2" style="font-size:.88rem;color:var(--text-2)">
+    Already registered? <a href="{{ url_for('login') }}">Sign In</a>
+  </p>
+</div>
+{% endblock %}

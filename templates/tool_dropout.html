@@ -1,0 +1,88 @@
+{% extends "base.html" %}{% block title %}Dropout Predictor — AI Campus{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Dropout Predictor</div>
+    <h1 style="font-size:1.8rem">🚨 Dropout <span class="text-teal">Predictor</span></h1>
+    <p class="mt-1">Random Forest · 5 features · Predicts dropout risk + intervention plan</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-red">Random Forest</span>
+      <span class="badge badge-red">Binary Class</span>
+      <span class="badge badge-amber">Early Warning</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Student Profile</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val,step in [('datt','Attendance (%)',0,100,55,1),('dmrk','Marks (%)',0,100,45,1),('dasgn','Assignments (%)',0,100,50,1),('dhrs','Study Hours/day',0,10,1,0.5),('dbeh','Behavior Score (1–10)',1,10,4,0.5)] %}
+        <div>
+          <div class="range-header mb-1"><label class="form-label">{{ label }}</label><span class="range-val" id="v-{{ id }}">{{ val }}</span></div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{{ step }}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="drop-btn" onclick="predictDropout()">Predict Dropout Risk →</button>
+      </div>
+    </div>
+    <div>
+      <div id="drop-ph" class="card text-center" style="padding:3rem 1.5rem"><div style="font-size:3rem;margin-bottom:.75rem">🚨</div><h3>Risk assessment will appear here</h3></div>
+      <div id="drop-result" style="display:none" class="flex-col">
+        <div class="result-panel" id="drop-panel">
+          <div class="verdict-ring" id="drop-ring"><span class="ring-main" id="drop-lbl">—</span><span class="ring-sub">Risk</span></div>
+          <div class="text-center mb-2">
+            <span class="badge badge-teal" id="drop-prob"></span>
+            <span class="badge badge-amber ml-1" id="drop-urg"></span>
+          </div>
+          <div>
+            <div class="range-header mb-1">
+              <span style="font-size:.78rem;color:var(--text-3)">Dropout Probability</span>
+              <span class="range-val text-red" id="drop-pct">—</span>
+            </div>
+            <div class="prog"><div class="prog-fill prog-red" id="drop-bar" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="card" id="drop-factors-card" style="display:none">
+          <h3 class="mb-2" style="color:var(--red)">🚨 Risk Factors</h3>
+          <div class="flex-col gap-sm" id="drop-factors"></div>
+        </div>
+        <div class="card">
+          <h3 class="mb-2">Intervention Plan</h3>
+          <div class="flex-col gap-sm" id="drop-interventions"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function predictDropout(){
+  const btn=document.getElementById('drop-btn');btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/dropout',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+datt.value,marks:+dmrk.value,assignments:+dasgn.value,study_hours:+dhrs.value,behavior:+dbeh.value})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('drop-ph').style.display='none';document.getElementById('drop-result').style.display='flex';
+    const ring=document.getElementById('drop-ring');
+    ring.className='verdict-ring '+(d.dropout_risk?'high':'low');
+    document.getElementById('drop-lbl').textContent=d.dropout_risk?'HIGH RISK':'LOW RISK';
+    document.getElementById('drop-lbl').style.color=d.dropout_risk?'var(--red)':'var(--green)';
+    document.getElementById('drop-prob').textContent=d.confidence+'% confidence';
+    document.getElementById('drop-urg').textContent='Urgency: '+d.urgency;
+    document.getElementById('drop-pct').textContent=d.probability+'%';
+    document.getElementById('drop-bar').style.width=d.probability+'%';
+    document.getElementById('drop-panel').className='result-panel '+(d.dropout_risk?'danger':'success');
+    const fc=document.getElementById('drop-factors-card');
+    if(d.risk_factors&&d.risk_factors.length){
+      fc.style.display='block';
+      document.getElementById('drop-factors').innerHTML=d.risk_factors.map(f=>`<div class="action-item urgent">⚠️ ${f}</div>`).join('');
+    } else fc.style.display='none';
+    document.getElementById('drop-interventions').innerHTML=d.interventions.map(i=>`<div class="tip-item">${i}</div>`).join('');
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Predict Dropout Risk →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

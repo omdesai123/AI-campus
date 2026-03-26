@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% block title %}Anomaly Detection — AI Campus{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Anomaly Detection</div>
+    <h1 style="font-size:1.8rem">🔬 Anomaly <span class="text-teal">Detection</span></h1>
+    <p class="mt-1">Isolation Forest · Unsupervised · Detects unusual behaviour patterns</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">
+      <span class="badge badge-violet">Isolation Forest</span><span class="badge badge-violet">Unsupervised</span><span class="badge badge-amber">Outlier Detection</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Student Behaviour Metrics</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val in [('aatt','Attendance (%)',0,100,75),('amrk','Marks (%)',0,100,60),('abeh','Behavior Score (1–10)',1,10,6),('ahrs','Study Hours/day',0,10,3)] %}
+        <div>
+          <div class="range-header mb-1"><label class="form-label">{{ label }}</label><span class="range-val" id="v-{{ id }}">{{ val }}</span></div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{% if id=='abeh' %}0.5{% else %}1{% endif %}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="anom-btn" onclick="detectAnomaly()">Detect Anomaly →</button>
+      </div>
+    </div>
+    <div>
+      <div id="anom-ph" class="card text-center" style="padding:3rem 1.5rem"><div style="font-size:3rem;margin-bottom:.75rem">🔬</div><h3>Result will appear here</h3></div>
+      <div id="anom-result" style="display:none" class="flex-col">
+        <div class="result-panel" id="anom-panel">
+          <div class="verdict-ring" id="anom-ring"><span class="ring-main" id="anom-lbl">—</span><span class="ring-sub">Status</span></div>
+          <div class="text-center mb-2">
+            <span class="badge badge-violet" id="anom-score"></span>
+            <span class="badge badge-amber ml-1" id="anom-sev"></span>
+          </div>
+          <p id="anom-rec" style="font-size:.88rem;text-align:center;color:var(--text-2)"></p>
+        </div>
+        <div class="card" id="anom-flags-card" style="display:none">
+          <h3 class="mb-2" style="color:var(--red)">⚠️ Anomaly Flags</h3>
+          <div class="flex-col gap-sm" id="anom-flags"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function detectAnomaly(){
+  const btn=document.getElementById('anom-btn');btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/anomaly',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+aatt.value,marks:+amrk.value,behavior:+abeh.value,study_hours:+ahrs.value})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('anom-ph').style.display='none';document.getElementById('anom-result').style.display='flex';
+    const ring=document.getElementById('anom-ring');
+    ring.className='verdict-ring '+(d.is_anomaly?'high':'low');
+    document.getElementById('anom-lbl').textContent=d.is_anomaly?'⚠️ ANOMALY':'✅ NORMAL';
+    document.getElementById('anom-lbl').style.color=d.is_anomaly?'var(--red)':'var(--green)';
+    document.getElementById('anom-score').textContent='Score: '+d.anomaly_score;
+    document.getElementById('anom-sev').textContent='Severity: '+d.severity;
+    document.getElementById('anom-rec').textContent=d.recommendation;
+    document.getElementById('anom-panel').className='result-panel '+(d.is_anomaly?'danger':'success');
+    const fc=document.getElementById('anom-flags-card');
+    if(d.flags&&d.flags.length){fc.style.display='block';document.getElementById('anom-flags').innerHTML=d.flags.map(f=>`<div class="action-item urgent">${f}</div>`).join('')}
+    else fc.style.display='none';
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Detect Anomaly →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}

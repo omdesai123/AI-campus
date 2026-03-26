@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% block title %}Recommendations — AI Campus{% endblock %}
+{% block content %}
+<div class="container" style="padding-top:2.5rem;padding-bottom:3rem">
+  <div class="page-hdr">
+    <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">Dashboard</a> / Recommendations</div>
+    <h1 style="font-size:1.8rem">💡 Smart <span class="text-teal">Recommendations</span></h1>
+    <p class="mt-1">ML-Scored Rule Engine · Personalised study and behaviour suggestions</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem"><span class="badge badge-amber">Rule-based + ML</span><span class="badge badge-teal">Personalised</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+    <div class="card">
+      <h3 class="mb-2">Your Profile</h3>
+      <div class="flex-col">
+        {% for id,label,min,max,val,step in [('ratt','Attendance (%)',0,100,65,1),('rhrs','Study Hours/day',0,12,2,0.5),('rasgn','Assignment Score (%)',0,100,60,1),('rmrk','Marks (%)',0,100,55,1),('rbeh','Behavior (1–10)',1,10,5,0.5)] %}
+        <div>
+          <div class="range-header mb-1"><label class="form-label">{{ label }}</label><span class="range-val" id="v-{{ id }}">{{ val }}</span></div>
+          <input type="range" class="form-input" id="{{ id }}" min="{{ min }}" max="{{ max }}" value="{{ val }}" step="{{ step }}"
+            oninput="document.getElementById('v-{{ id }}').textContent=this.value"/>
+        </div>
+        {% endfor %}
+        <button class="btn btn-full mt-2" id="rec-btn" onclick="getRecommend()">Get Recommendations →</button>
+      </div>
+    </div>
+    <div>
+      <div id="rec-ph" class="card text-center" style="padding:3rem 1.5rem"><div style="font-size:3rem;margin-bottom:.75rem">💡</div><h3>Recommendations will appear here</h3></div>
+      <div id="rec-result" style="display:none" class="flex-col">
+        <div class="result-panel mb-1">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div><div style="font-size:.75rem;color:var(--text-3);font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase">Overall Score</div>
+            <div style="font-family:'DM Serif Display',serif;font-size:2.5rem;color:var(--teal)" id="rec-score">—</div></div>
+            <div class="verdict-ring" id="grade-ring" style="width:80px;height:80px;border-color:var(--teal)"><span style="font-family:'DM Serif Display',serif;font-size:1.8rem" id="rec-grade">—</span></div>
+          </div>
+        </div>
+        <div class="card"><h3 class="mb-2">Personalised Recommendations</h3><div class="flex-col gap-sm" id="rec-list"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function getRecommend(){
+  const btn=document.getElementById('rec-btn');btn.innerHTML='<span class="spinner"></span>';btn.disabled=true;
+  try{
+    const r=await fetch('/api/recommend',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({attendance:+ratt.value,study_hours:+rhrs.value,assignments:+rasgn.value,marks:+rmrk.value,behavior:+rbeh.value})});
+    const d=await r.json();if(!d.success){toast(d.error,'red');return}
+    document.getElementById('rec-ph').style.display='none';document.getElementById('rec-result').style.display='flex';
+    document.getElementById('rec-score').textContent=d.overall_score;
+    document.getElementById('rec-grade').textContent=d.grade;
+    const impactColor={High:'var(--red)',Medium:'var(--amber)',Low:'var(--green)'};
+    document.getElementById('rec-list').innerHTML=d.recommendations.map(rec=>`
+      <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r);padding:1rem;border-left:3px solid ${impactColor[rec.impact]||'var(--teal)'}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+          <div style="font-weight:600;font-size:.9rem">${rec.icon} ${rec.category}</div>
+          <span class="badge ${rec.impact==='High'?'badge-red':rec.impact==='Medium'?'badge-amber':'badge-green'}">${rec.impact} Impact</span>
+        </div>
+        <div style="font-size:.85rem;color:var(--text-2)">${rec.action}</div>
+        <div style="font-size:.75rem;color:var(--text-3);margin-top:.4rem;font-family:'IBM Plex Mono',monospace">Current: ${rec.current} → Target: ${rec.target}</div>
+      </div>`).join('');
+  }catch(e){toast('Network error','red')}
+  finally{btn.innerHTML='Get Recommendations →';btn.disabled=false}
+}
+function toast(m,c){const t=document.createElement('div');t.className='toast';t.style.borderLeft=`3px solid var(--${c||'teal'})`;t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+</script>
+{% endblock %}
